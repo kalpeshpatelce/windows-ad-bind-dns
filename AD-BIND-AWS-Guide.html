@@ -1,0 +1,1859 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Windows AD + Linux BIND DNS on AWS — Complete Integration Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:         #0b0e14;
+  --bg2:        #111520;
+  --bg3:        #161c2c;
+  --border:     #1e2740;
+  --border2:    #2a3555;
+  --text:       #c8d3f0;
+  --text-dim:   #5a6a99;
+  --text-bright:#e8eeff;
+  --green:      #4ade80;
+  --green-dim:  #166534;
+  --blue:       #60a5fa;
+  --blue-dim:   #1e3a6e;
+  --amber:      #fbbf24;
+  --amber-dim:  #78350f;
+  --red:        #f87171;
+  --red-dim:    #7f1d1d;
+  --purple:     #a78bfa;
+  --cyan:       #22d3ee;
+  --accent:     #3b82f6;
+  --mono:       'JetBrains Mono', monospace;
+  --sans:       'Syne', sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.7;
+  overflow-x: hidden;
+}
+
+/* ── Scanline texture overlay ── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+  pointer-events: none;
+  z-index: 1000;
+}
+
+/* ── Layout ── */
+.layout { display: flex; min-height: 100vh; }
+
+/* ── Sidebar Nav ── */
+.sidebar {
+  width: 260px;
+  min-width: 260px;
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  flex-shrink: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border2) transparent;
+}
+
+.sidebar-header {
+  padding: 24px 20px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-logo {
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+.sidebar-title {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-bright);
+  line-height: 1.3;
+}
+
+.nav-section {
+  padding: 16px 0 8px;
+}
+
+.nav-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 0 20px 8px;
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 20px;
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 12px;
+  transition: all 0.15s;
+  border-left: 2px solid transparent;
+}
+
+.nav-link:hover {
+  color: var(--text-bright);
+  background: rgba(59,130,246,0.06);
+  border-left-color: var(--accent);
+}
+
+.nav-link.active {
+  color: var(--blue);
+  border-left-color: var(--blue);
+  background: var(--blue-dim);
+}
+
+.nav-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.nav-phase {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 20px;
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 12px;
+  transition: all 0.15s;
+  border-left: 2px solid transparent;
+}
+
+.nav-phase:hover { color: var(--text-bright); border-left-color: var(--border2); }
+
+.phase-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.badge-linux  { background: var(--green-dim);  color: var(--green); }
+.badge-win    { background: var(--blue-dim);   color: var(--blue); }
+.badge-fix    { background: var(--amber-dim);  color: var(--amber); }
+.badge-aws    { background: rgba(251,191,36,0.15); color: var(--amber); }
+
+/* ── Main content ── */
+.main {
+  flex: 1;
+  min-width: 0;
+  padding: 0 48px 80px;
+  max-width: 960px;
+}
+
+/* ── Hero ── */
+.hero {
+  padding: 64px 0 48px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 48px;
+  position: relative;
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  top: 0; left: -48px; right: -48px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+}
+
+.hero-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--blue);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hero-eyebrow::before {
+  content: '';
+  display: inline-block;
+  width: 24px; height: 1px;
+  background: var(--blue);
+}
+
+.hero h1 {
+  font-family: var(--sans);
+  font-size: clamp(24px, 3vw, 36px);
+  font-weight: 800;
+  color: var(--text-bright);
+  line-height: 1.15;
+  margin-bottom: 20px;
+  letter-spacing: -0.02em;
+}
+
+.hero h1 span { color: var(--blue); }
+
+.hero-desc {
+  color: var(--text-dim);
+  font-size: 14px;
+  max-width: 600px;
+  line-height: 1.7;
+  margin-bottom: 32px;
+}
+
+.hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.meta-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--bg3);
+}
+
+.meta-chip .dot { width: 6px; height: 6px; border-radius: 50%; }
+.dot-green { background: var(--green); }
+.dot-blue  { background: var(--blue); }
+.dot-amber { background: var(--amber); }
+
+/* ── Architecture diagram ── */
+.arch-box {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 20px;
+  margin: 32px 0;
+  overflow-x: auto;
+}
+
+.arch-box pre {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.6;
+  white-space: pre;
+}
+
+.arch-box pre .hl  { color: var(--green); }
+.arch-box pre .hl2 { color: var(--blue); }
+.arch-box pre .hl3 { color: var(--amber); }
+
+/* ── Sections ── */
+section {
+  margin-bottom: 56px;
+  scroll-margin-top: 24px;
+}
+
+h2 {
+  font-family: var(--sans);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-bright);
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  letter-spacing: -0.01em;
+}
+
+h2 .section-num {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: 3px;
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+}
+
+h3 {
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-bright);
+  margin: 28px 0 12px;
+}
+
+h4 {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--blue);
+  margin: 20px 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+p {
+  color: var(--text);
+  margin-bottom: 14px;
+  font-size: 13.5px;
+  line-height: 1.75;
+}
+
+/* ── Callout boxes ── */
+.callout {
+  border-left: 3px solid;
+  padding: 14px 18px;
+  border-radius: 0 6px 6px 0;
+  margin: 20px 0;
+  font-size: 13px;
+}
+
+.callout-title {
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  margin-bottom: 6px;
+}
+
+.callout.info    { border-color: var(--blue);  background: var(--blue-dim); }
+.callout.info .callout-title    { color: var(--blue); }
+.callout.warn    { border-color: var(--amber); background: var(--amber-dim); }
+.callout.warn .callout-title    { color: var(--amber); }
+.callout.danger  { border-color: var(--red);   background: var(--red-dim); }
+.callout.danger .callout-title  { color: var(--red); }
+.callout.success { border-color: var(--green); background: var(--green-dim); }
+.callout.success .callout-title { color: var(--green); }
+
+/* ── Code blocks ── */
+.code-wrap {
+  position: relative;
+  margin: 16px 0;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: var(--bg3);
+  border-bottom: 1px solid var(--border);
+}
+
+.code-lang {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-dim);
+}
+
+.code-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.copy-btn {
+  background: none;
+  border: 1px solid var(--border2);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 3px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s;
+  letter-spacing: 0.05em;
+}
+
+.copy-btn:hover { border-color: var(--blue); color: var(--blue); }
+.copy-btn.copied { border-color: var(--green); color: var(--green); }
+
+pre {
+  background: var(--bg2);
+  padding: 18px 20px;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.65;
+  tab-size: 2;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border2) transparent;
+}
+
+code { font-family: var(--mono); }
+
+/* Syntax coloring */
+.kw  { color: var(--purple); }
+.str { color: var(--green); }
+.cm  { color: var(--text-dim); font-style: italic; }
+.fn  { color: var(--blue); }
+.num { color: var(--amber); }
+.op  { color: var(--cyan); }
+.hl-line { background: rgba(59,130,246,0.08); display: block; margin: 0 -20px; padding: 0 20px; }
+
+/* Inline code */
+p code, li code, td code {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+  color: var(--cyan);
+}
+
+/* ── Tables ── */
+.table-wrap { overflow-x: auto; margin: 20px 0; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+thead tr {
+  background: var(--bg3);
+  border-bottom: 1px solid var(--border2);
+}
+
+th {
+  padding: 10px 16px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+}
+
+td {
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  vertical-align: top;
+}
+
+tr:hover td { background: rgba(59,130,246,0.03); }
+
+td code { font-size: 11px; }
+
+/* ── Phase headers ── */
+.phase-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 24px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 24px;
+  position: relative;
+  overflow: hidden;
+}
+
+.phase-header::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+}
+
+.phase-header.linux::before  { background: var(--green); }
+.phase-header.windows::before { background: var(--blue); }
+.phase-header.aws::before    { background: var(--amber); }
+.phase-header.fix::before    { background: var(--red); }
+
+.phase-num {
+  font-family: var(--sans);
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1;
+  opacity: 0.15;
+  flex-shrink: 0;
+}
+
+.phase-info { flex: 1; }
+
+.phase-tag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.phase-header.linux  .phase-tag { color: var(--green); }
+.phase-header.windows .phase-tag { color: var(--blue); }
+.phase-header.aws    .phase-tag { color: var(--amber); }
+.phase-header.fix    .phase-tag { color: var(--red); }
+
+.phase-title {
+  font-family: var(--sans);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-bright);
+}
+
+.phase-desc { font-size: 12px; color: var(--text-dim); margin-top: 3px; }
+
+.phase-badge-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.pbadge {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  border: 1px solid;
+}
+
+.pbadge-green { border-color: var(--green); color: var(--green); }
+.pbadge-blue  { border-color: var(--blue);  color: var(--blue); }
+.pbadge-amber { border-color: var(--amber); color: var(--amber); }
+
+/* ── Step indicators ── */
+.steps { display: flex; flex-direction: column; gap: 2px; margin: 16px 0; }
+
+.step {
+  display: flex;
+  gap: 14px;
+  position: relative;
+}
+
+.step::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 28px;
+  bottom: -2px;
+  width: 1px;
+  background: var(--border);
+}
+
+.step:last-child::before { display: none; }
+
+.step-num {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.step-body { flex: 1; padding-bottom: 20px; }
+
+.step-title {
+  font-weight: 500;
+  color: var(--text-bright);
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+/* ── Status grid ── */
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+}
+
+.status-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px;
+}
+
+.status-card-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+.status-card-value {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-bright);
+  font-weight: 500;
+}
+
+/* ── Fix block ── */
+.fix-block {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--amber);
+  border-radius: 0 0 6px 6px;
+  margin: 24px 0;
+  overflow: hidden;
+}
+
+.fix-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  background: var(--amber-dim);
+  border-bottom: 1px solid var(--border);
+}
+
+.fix-icon { font-size: 16px; }
+
+.fix-title {
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--amber);
+}
+
+.fix-body { padding: 16px 18px; }
+
+/* ── Checklist ── */
+.checklist { list-style: none; margin: 12px 0; }
+
+.checklist li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 13px;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+
+.checklist li:last-child { border-bottom: none; }
+
+.check-icon { flex-shrink: 0; font-size: 12px; margin-top: 2px; }
+.check-ok   { color: var(--green); }
+.check-warn { color: var(--amber); }
+.check-fail { color: var(--red); }
+
+/* ── TOC progress ── */
+.toc-progress {
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+  margin-top: auto;
+}
+
+.progress-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+.progress-phases {
+  display: flex;
+  gap: 4px;
+}
+
+.progress-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--border2);
+}
+
+/* ── Inline badges ── */
+.badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  vertical-align: middle;
+}
+
+.badge-g { background: var(--green-dim); color: var(--green); }
+.badge-b { background: var(--blue-dim);  color: var(--blue); }
+.badge-a { background: var(--amber-dim); color: var(--amber); }
+.badge-r { background: var(--red-dim);   color: var(--red); }
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  .sidebar { display: none; }
+  .main { padding: 0 24px 60px; }
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+/* ── Print / GitHub Pages compatibility ── */
+@media print {
+  .sidebar { display: none; }
+  .copy-btn { display: none; }
+  body::before { display: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+<!-- ══════════════════════════════════════════════════════════════
+     SIDEBAR
+══════════════════════════════════════════════════════════════ -->
+<nav class="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-logo">Infrastructure Guide</div>
+    <div class="sidebar-title">Windows AD + Linux BIND on AWS</div>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-label">Overview</div>
+    <a href="#overview"      class="nav-link"><span class="nav-dot"></span>Architecture</a>
+    <a href="#prerequisites" class="nav-link"><span class="nav-dot"></span>Prerequisites</a>
+    <a href="#hostmap"       class="nav-link"><span class="nav-dot"></span>Host Map</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-label">Deployment Phases</div>
+    <a href="#phase1" class="nav-phase"><span class="phase-badge badge-aws">AWS</span>Infrastructure</a>
+    <a href="#phase2" class="nav-phase"><span class="phase-badge badge-linux">Linux</span>BIND Config</a>
+    <a href="#phase3" class="nav-phase"><span class="phase-badge badge-win">Win</span>DC Promotion</a>
+    <a href="#phase3b" class="nav-phase"><span class="phase-badge badge-win">Win</span>Post-Reboot</a>
+    <a href="#phase4" class="nav-phase"><span class="phase-badge badge-linux">Linux</span>Post-Promotion</a>
+    <a href="#phase5" class="nav-phase"><span class="phase-badge badge-win">Win</span>Domain Join</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-label">Fixes &amp; Issues</div>
+    <a href="#fix-msdcs"    class="nav-link"><span class="nav-dot" style="background:var(--amber)"></span>_msdcs Zone Design</a>
+    <a href="#fix-apparmor" class="nav-link"><span class="nav-dot" style="background:var(--amber)"></span>AppArmor JNRL Block</a>
+    <a href="#fix-tsig"     class="nav-link"><span class="nav-dot" style="background:var(--amber)"></span>TSIG / REFUSED</a>
+    <a href="#fix-join"     class="nav-link"><span class="nav-dot" style="background:var(--amber)"></span>Domain Join OU Error</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-label">Reference</div>
+    <a href="#ports"      class="nav-link"><span class="nav-dot"></span>Required Ports</a>
+    <a href="#records"    class="nav-link"><span class="nav-dot"></span>All DNS Records</a>
+    <a href="#troubleshoot" class="nav-link"><span class="nav-dot"></span>Troubleshooting</a>
+    <a href="#costs"      class="nav-link"><span class="nav-dot"></span>AWS Cost Estimate</a>
+    <a href="#teardown"   class="nav-link"><span class="nav-dot"></span>Teardown</a>
+  </div>
+</nav>
+
+<!-- ══════════════════════════════════════════════════════════════
+     MAIN CONTENT
+══════════════════════════════════════════════════════════════ -->
+<main class="main">
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-eyebrow">Production Runbook · v2.0</div>
+  <h1>Windows <span>Active Directory</span><br>with Linux BIND DNS on AWS</h1>
+  <p class="hero-desc">
+    A complete, battle-tested integration guide covering VPC networking, BIND 9 zone design, AD DS promotion without Windows DNS, and all real-world fixes encountered during deployment — including AppArmor journal blocks, TSIG authentication, _msdcs zone architecture, and domain join errors.
+  </p>
+  <div class="hero-meta">
+    <div class="meta-chip"><span class="dot dot-green"></span>Ubuntu 22.04 LTS · BIND 9.18</div>
+    <div class="meta-chip"><span class="dot dot-blue"></span>Windows Server 2022 · AD DS</div>
+    <div class="meta-chip"><span class="dot dot-amber"></span>AWS EC2 · VPC · us-east-1</div>
+    <div class="meta-chip"><span class="dot" style="background:var(--purple)"></span>Difficulty: Advanced</div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     SECTION: OVERVIEW
+════════════════════════════════════════ -->
+<section id="overview">
+  <h2><span class="section-num">01</span>Architecture Overview</h2>
+
+  <p>This setup replaces Windows DNS (which would normally be installed alongside AD DS) with a Linux BIND 9 server as the sole authoritative DNS for the Active Directory domain. All required AD SRV records are pre-populated in BIND before DC promotion. The DC registers its dynamic records into BIND via IP-authenticated DNS updates.</p>
+
+  <div class="arch-box"><pre><span class="hl">┌─────────────────────────────────────────────────────────────────┐
+│              AWS VPC: 10.0.0.0/16  (us-east-1a)               │
+│                                                                 │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │            Private Subnet: 10.0.1.0/24                   │  │
+│  │                                                          │  │
+│  │  ┌─────────────────────┐   ┌──────────────────────────┐ │  │
+│  │  │  </span><span class="hl2">dns01</span><span class="hl">                │   │  </span><span class="hl2">corp-dc01</span><span class="hl">              │ │  │
+│  │  │  Ubuntu 22.04       │◄──│  Windows Server 2022     │ │  │
+│  │  │  BIND 9.18          │   │  AD DS (no Win DNS)      │ │  │
+│  │  │  192.168.15.172     │   │  192.168.6.34            │ │  │
+│  │  │  t3.small           │   │  t3.medium + EIP(RDP)    │ │  │
+│  │  └─────────────────────┘   └──────────────────────────┘ │  │
+│  │                                      ▲                   │  │
+│  │  ┌─────────────────────┐             │ Domain Join       │  │
+│  │  │  </span><span class="hl3">client01</span><span class="hl">             │─────────────┘                   │  │
+│  │  │  Windows 11/2022    │                                 │  │
+│  │  │  DHCP               │                                 │  │
+│  │  └─────────────────────┘                                 │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                                                                 │
+│  ┌──────────────────────┐                                       │
+│  │  Public Subnet       │  NAT GW (private egress)             │
+│  │  10.0.0.0/24         │  IGW (RDP admin access)              │
+│  └──────────────────────┘                                       │
+└─────────────────────────────────────────────────────────────────┘</span></pre></div>
+
+  <div class="callout warn">
+    <div class="callout-title">⚠ Key Design Decision</div>
+    The DC is promoted with <code>-InstallDns $false</code>. This means Windows will <strong>never</strong> install its own DNS server. BIND is solely responsible for all SRV records, dynamic updates, and zone authority. Every record the DC needs must be pre-populated before promotion or registered dynamically afterward.
+  </div>
+</section>
+
+<!-- HOST MAP -->
+<section id="hostmap">
+  <h2><span class="section-num">02</span>Host &amp; IP Map</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Role</th><th>Hostname</th><th>IP Address</th><th>OS</th><th>Instance</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge badge-linux">DNS</span></td><td><code>dns01.corp.local</code></td><td><code>192.168.15.172</code></td><td>Ubuntu 22.04 LTS</td><td>t3.small</td></tr>
+        <tr><td><span class="badge badge-b">DC</span></td><td><code>corp-dc01.corp.local</code></td><td><code>192.168.6.34</code></td><td>Windows Server 2022</td><td>t3.medium</td></tr>
+        <tr><td><span class="badge badge-a">Client</span></td><td><code>EC2AMAZ-CL45ERI</code></td><td>DHCP</td><td>Windows Server 2022</td><td>t3.small</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>AD Domain: <code>corp.local</code> &nbsp;|&nbsp; NetBIOS: <code>CORP</code> &nbsp;|&nbsp; DC GUID: <code>c1771fb0-983c-41dc-9dcb-20ed83363168</code></p>
+</section>
+
+<!-- PORTS -->
+<section id="ports">
+  <h2><span class="section-num">03</span>Required Ports</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Port</th><th>Protocol</th><th>Service</th><th>Direction</th></tr></thead>
+      <tbody>
+        <tr><td><code>53</code></td><td>TCP/UDP</td><td>DNS</td><td>All hosts ↔ DNS server</td></tr>
+        <tr><td><code>88</code></td><td>TCP/UDP</td><td>Kerberos</td><td>Clients ↔ DC</td></tr>
+        <tr><td><code>135</code></td><td>TCP</td><td>RPC Endpoint Mapper</td><td>Clients ↔ DC</td></tr>
+        <tr><td><code>389</code></td><td>TCP/UDP</td><td>LDAP</td><td>Clients ↔ DC</td></tr>
+        <tr><td><code>445</code></td><td>TCP</td><td>SMB / SYSVOL</td><td>Clients ↔ DC</td></tr>
+        <tr><td><code>464</code></td><td>TCP/UDP</td><td>Kerberos kpasswd</td><td>Clients ↔ DC</td></tr>
+        <tr><td><code>636</code></td><td>TCP</td><td>LDAPS</td><td>Clients ↔ DC</td></tr>
+        <tr><td><code>3268</code></td><td>TCP</td><td>Global Catalog</td><td>Clients ↔ DC</td></tr>
+        <tr><td><code>49152–65535</code></td><td>TCP</td><td>RPC Dynamic</td><td>DC ↔ DC</td></tr>
+        <tr><td><code>3389</code></td><td>TCP</td><td>RDP (admin)</td><td>Admin IP → DC/Client</td></tr>
+        <tr><td><code>22</code></td><td>TCP</td><td>SSH (admin)</td><td>Admin IP → DNS server</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════
+     PHASE 1 — AWS INFRASTRUCTURE
+════════════════════════════════════════ -->
+<section id="phase1">
+  <div class="phase-header aws">
+    <div class="phase-num">01</div>
+    <div class="phase-info">
+      <div class="phase-tag">AWS CLI · Bash</div>
+      <div class="phase-title">AWS Infrastructure Deployment</div>
+      <div class="phase-desc">VPC, subnets, security groups, EC2 instances, NAT gateway, DHCP options</div>
+      <div class="phase-badge-row">
+        <span class="pbadge pbadge-amber">Run from: local machine</span>
+        <span class="pbadge pbadge-amber">Time: ~7 min</span>
+      </div>
+    </div>
+  </div>
+
+  <h3>Prerequisites</h3>
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">bash</span><span class="code-label">local machine</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code><span class="cm"># Install AWS CLI v2 and configure</span>
+aws configure
+<span class="cm"># Enter: Access Key, Secret Key, us-east-1, json</span>
+
+<span class="cm"># Verify identity</span>
+aws sts get-caller-identity
+
+<span class="cm"># Create key pair</span>
+aws ec2 create-key-pair \
+  --region us-east-1 \
+  --key-name ad-lab-keypair \
+  --query <span class="str">'KeyMaterial'</span> \
+  --output text > ~/.ssh/ad-lab-keypair.pem
+chmod 400 ~/.ssh/ad-lab-keypair.pem
+
+<span class="cm"># Get your public IP for SG rules</span>
+curl -s ifconfig.me
+
+<span class="cm"># Find latest Windows Server 2022 AMI</span>
+aws ec2 describe-images \
+  --region us-east-1 \
+  --owners amazon \
+  --filters <span class="str">"Name=name,Values=Windows_Server-2022-English-Full-Base-*"</span> \
+            <span class="str">"Name=state,Values=available"</span> \
+  --query <span class="str">'sort_by(Images, &amp;CreationDate)[-1].{ID:ImageId,Name:Name}'</span> \
+  --output table
+
+<span class="cm"># Find latest Ubuntu 22.04 AMI</span>
+aws ec2 describe-images \
+  --region us-east-1 \
+  --owners 099720109477 \
+  --filters <span class="str">"Name=name,Values=ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-*"</span> \
+            <span class="str">"Name=state,Values=available"</span> \
+  --query <span class="str">'sort_by(Images, &amp;CreationDate)[-1].{ID:ImageId,Name:Name}'</span> \
+  --output table</code></pre>
+  </div>
+
+  <h3>Create VPC and Networking</h3>
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">bash</span><span class="code-label">phase1-aws-infrastructure.sh (excerpt)</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code>REGION=<span class="str">"us-east-1"</span>
+
+<span class="cm"># VPC</span>
+VPC_ID=$(aws ec2 create-vpc --region <span class="str">"$REGION"</span> \
+  --cidr-block 10.0.0.0/16 \
+  --query <span class="str">'Vpc.VpcId'</span> --output text)
+
+aws ec2 modify-vpc-attribute --vpc-id <span class="str">"$VPC_ID"</span> --enable-dns-hostnames
+aws ec2 modify-vpc-attribute --vpc-id <span class="str">"$VPC_ID"</span> --enable-dns-support
+
+<span class="cm"># Private subnet — AD infrastructure</span>
+PRIVATE_SUBNET_ID=$(aws ec2 create-subnet \
+  --vpc-id <span class="str">"$VPC_ID"</span> --cidr-block 10.0.1.0/24 \
+  --availability-zone us-east-1a \
+  --query <span class="str">'Subnet.SubnetId'</span> --output text)
+
+<span class="cm"># Internet Gateway</span>
+IGW_ID=$(aws ec2 create-internet-gateway \
+  --query <span class="str">'InternetGateway.InternetGatewayId'</span> --output text)
+aws ec2 attach-internet-gateway --vpc-id <span class="str">"$VPC_ID"</span> --internet-gateway-id <span class="str">"$IGW_ID"</span>
+
+<span class="cm"># NAT Gateway (for private subnet outbound)</span>
+EIP_ALLOC=$(aws ec2 allocate-address --domain vpc --query <span class="str">'AllocationId'</span> --output text)
+NAT_GW_ID=$(aws ec2 create-nat-gateway \
+  --subnet-id <span class="str">"$PUBLIC_SUBNET_ID"</span> --allocation-id <span class="str">"$EIP_ALLOC"</span> \
+  --query <span class="str">'NatGateway.NatGatewayId'</span> --output text)
+aws ec2 wait nat-gateway-available --nat-gateway-ids <span class="str">"$NAT_GW_ID"</span></code></pre>
+  </div>
+
+  <h3>Security Groups</h3>
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code><span class="cm"># DNS Server SG — port 53 from VPC only, SSH from admin IP</span>
+DNS_SG_ID=$(aws ec2 create-security-group \
+  --group-name <span class="str">"ad-lab-dns-sg"</span> \
+  --description <span class="str">"BIND DNS — AD lab"</span> \
+  --vpc-id <span class="str">"$VPC_ID"</span> \
+  --query <span class="str">'GroupId'</span> --output text)
+
+aws ec2 authorize-security-group-ingress --group-id <span class="str">"$DNS_SG_ID"</span> \
+  --ip-permissions \
+  <span class="str">'[{"IpProtocol":"tcp","FromPort":53,"ToPort":53,"IpRanges":[{"CidrIp":"10.0.0.0/16"}]}]'</span>
+aws ec2 authorize-security-group-ingress --group-id <span class="str">"$DNS_SG_ID"</span> \
+  --ip-permissions \
+  <span class="str">'[{"IpProtocol":"udp","FromPort":53,"ToPort":53,"IpRanges":[{"CidrIp":"10.0.0.0/16"}]}]'</span>
+
+<span class="cm"># DC SG — all AD ports from VPC, RDP from admin IP</span>
+DC_SG_ID=$(aws ec2 create-security-group \
+  --group-name <span class="str">"ad-lab-dc-sg"</span> \
+  --description <span class="str">"Windows AD DC — AD lab"</span> \
+  --vpc-id <span class="str">"$VPC_ID"</span> \
+  --query <span class="str">'GroupId'</span> --output text)
+
+<span class="cm"># AD ports: 88, 389, 445, 464, 3268, 49152-65535</span>
+<span class="kw">for</span> port <span class="kw">in</span> 88 389 445 464 3268 135; <span class="kw">do</span>
+  aws ec2 authorize-security-group-ingress --group-id <span class="str">"$DC_SG_ID"</span> \
+    --ip-permissions \
+    <span class="str">"[{\"IpProtocol\":\"tcp\",\"FromPort\":$port,\"ToPort\":$port,\"IpRanges\":[{\"CidrIp\":\"10.0.0.0/16\"}]}]"</span>
+<span class="kw">done</span></code></pre>
+  </div>
+
+  <h3>DHCP Options — Critical AWS Step</h3>
+  <div class="callout warn">
+    <div class="callout-title">⚠ Required: Replace AWS Default DNS</div>
+    By default, AWS VPC instances use <code>169.254.169.253</code> as their DNS resolver. You must create a custom DHCP options set to push your BIND server's IP to all instances in the VPC. Without this, instances won't find the AD domain.
+  </div>
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code>DHCP_OPTIONS_ID=$(aws ec2 create-dhcp-options \
+  --dhcp-configurations \
+    <span class="str">"Key=domain-name,Values=corp.local"</span> \
+    <span class="str">"Key=domain-name-servers,Values=192.168.15.172"</span> \
+    <span class="str">"Key=ntp-servers,Values=169.254.169.123"</span> \
+  --query <span class="str">'DhcpOptions.DhcpOptionsId'</span> --output text)
+
+aws ec2 associate-dhcp-options \
+  --vpc-id <span class="str">"$VPC_ID"</span> \
+  --dhcp-options-id <span class="str">"$DHCP_OPTIONS_ID"</span></code></pre>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════
+     PHASE 2 — BIND CONFIG
+════════════════════════════════════════ -->
+<section id="phase2">
+  <div class="phase-header linux">
+    <div class="phase-num">02</div>
+    <div class="phase-info">
+      <div class="phase-tag">Linux · Bash</div>
+      <div class="phase-title">BIND 9 Installation &amp; Zone Configuration</div>
+      <div class="phase-desc">Install BIND, write zone files, configure TSIG, fix AppArmor, validate</div>
+      <div class="phase-badge-row">
+        <span class="pbadge pbadge-green">Run on: dns01 (192.168.15.172)</span>
+        <span class="pbadge pbadge-green">SSH or SSM</span>
+      </div>
+    </div>
+  </div>
+
+  <h3>System Preparation</h3>
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">bash</span><span class="code-label">dns01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code><span class="cm"># Set hostname</span>
+sudo hostnamectl set-hostname dns01.corp.local
+
+<span class="cm"># /etc/hosts — FQDN must resolve before DNS starts</span>
+sudo tee /etc/hosts &gt; /dev/null &lt;&lt; <span class="str">'EOF'</span>
+<span class="str">127.0.0.1       localhost
+192.168.15.172  dns01.corp.local dns01
+192.168.6.34    corp-dc01.corp.local corp-dc01</span>
+EOF
+
+<span class="cm"># Disable systemd-resolved (conflicts with BIND on :53)</span>
+sudo systemctl disable --now systemd-resolved
+sudo rm -f /etc/resolv.conf
+sudo tee /etc/resolv.conf &gt; /dev/null &lt;&lt; <span class="str">'EOF'</span>
+<span class="str">nameserver 127.0.0.1
+nameserver 169.254.169.253
+search corp.local</span>
+EOF
+sudo chattr +i /etc/resolv.conf   <span class="cm"># prevent DHCP overwrite</span></code></pre>
+  </div>
+
+  <h3>Install BIND + Configure NTP</h3>
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code>sudo apt-get update -qq
+sudo apt-get install -y bind9 bind9utils dnsutils chrony
+
+<span class="cm"># NTP via AWS Time Sync (always available on EC2)</span>
+sudo tee /etc/chrony/chrony.conf &gt; /dev/null &lt;&lt; <span class="str">'EOF'</span>
+<span class="str">server 169.254.169.123 prefer iburst
+pool pool.ntp.org iburst
+driftfile /var/lib/chrony/drift
+makestep 1.0 3</span>
+EOF
+sudo systemctl enable --now chrony
+chronyc tracking | grep -E <span class="str">"Reference|System"</span>
+
+named -v   <span class="cm"># verify BIND version</span></code></pre>
+  </div>
+
+  <h3>named.conf.options</h3>
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">bind</span><span class="code-label">/etc/bind/named.conf.options</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code>options {
+    directory <span class="str">"/var/cache/bind"</span>;
+
+    listen-on { 127.0.0.1; 192.168.15.172; };
+    listen-on-v6 { none; };
+
+    allow-query     { localhost; 192.168.0.0/16; };
+    allow-recursion { localhost; 192.168.0.0/16; };
+
+    <span class="cm">// forward first: uses forwarders, falls back to root hints on failure</span>
+    <span class="cm">// NOTE: "forward only" causes total DNS failure if upstreams are down</span>
+    forwarders { 169.254.169.253; 8.8.8.8; };
+    forward first;
+
+    allow-transfer { none; };
+    allow-update { none; };   <span class="cm">// NEVER set globally — override per-zone only</span>
+
+    version <span class="str">"Not disclosed"</span>;
+    edns-udp-size 4096;
+    max-udp-size  4096;
+    dnssec-validation auto;
+    auth-nxdomain no;
+    recursion yes;
+};</code></pre>
+  </div>
+
+  <h3>Generate TSIG Key</h3>
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code>sudo tsig-keygen -a hmac-sha256 ad-update-key | sudo tee /etc/bind/tsig-ad.key
+sudo chown root:bind /etc/bind/tsig-ad.key
+sudo chmod 640 /etc/bind/tsig-ad.key
+sudo cat /etc/bind/tsig-ad.key   <span class="cm"># save this secret value</span></code></pre>
+  </div>
+
+  <h3>named.conf.local — Zone Declarations</h3>
+  <div class="callout info">
+    <div class="callout-title">ℹ Critical: _msdcs Must Be a Separate Zone</div>
+    AD's DC Locator performs SOA lookups directly against <code>_msdcs.corp.local</code>. If it is only a subdomain delegation inside <code>corp.local</code>, the SOA check fails and DC discovery breaks silently. It must be declared as its own <code>type master</code> zone.
+  </div>
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">bind</span><span class="code-label">/etc/bind/named.conf.local</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code>include <span class="str">"/etc/bind/tsig-ad.key"</span>;
+
+acl <span class="str">"ad-dns-updaters"</span> {
+    192.168.6.34;   <span class="cm">// corp-dc01</span>
+};
+
+<span class="cm">// _msdcs — MUST be a separate authoritative zone</span>
+zone <span class="str">"_msdcs.corp.local"</span> {
+    type master;
+    file <span class="str">"/etc/bind/zones/db._msdcs.corp.local"</span>;
+    allow-update  { key <span class="str">"ad-update-key"</span>; 192.168.6.34; 127.0.0.1; };
+    allow-query   { 192.168.0.0/16; localhost; };
+    allow-transfer { none; };
+};
+
+zone <span class="str">"corp.local"</span> {
+    type master;
+    file <span class="str">"/etc/bind/zones/db.corp.local"</span>;
+    allow-update  { key <span class="str">"ad-update-key"</span>; 192.168.6.34; 127.0.0.1; };
+    allow-query   { 192.168.0.0/16; localhost; };
+    allow-transfer { none; };
+};
+
+zone <span class="str">"168.192.in-addr.arpa"</span> {
+    type master;
+    file <span class="str">"/etc/bind/zones/db.192.168"</span>;
+    allow-update  { key <span class="str">"ad-update-key"</span>; 192.168.6.34; 127.0.0.1; };
+    allow-query   { 192.168.0.0/16; localhost; };
+    allow-transfer { none; };
+};</code></pre>
+  </div>
+
+  <h3>corp.local Zone File</h3>
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">bind</span><span class="code-label">/etc/bind/zones/db.corp.local</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code>$ORIGIN corp.local.
+$TTL 3600
+
+@   IN  SOA dns01.corp.local. hostmaster.corp.local. (
+                2024010101  ; Serial — increment on every change
+                900 300 604800 300 )
+
+@               IN  NS  dns01.corp.local.
+<span class="cm">; _msdcs delegation — BIND resolves via separate zone in named.conf.local</span>
+_msdcs          3600 IN  NS  dns01.corp.local.
+
+<span class="cm">; A Records (TTL 3600 — infrastructure changes rarely)</span>
+@               3600 IN  A   192.168.6.34
+dns01           3600 IN  A   192.168.15.172
+corp-dc01       3600 IN  A   192.168.6.34
+
+<span class="cm">; Kerberos SRV (TTL 300 — short for fast DC failover)</span>
+_kerberos._tcp                  300 IN  SRV  0 100 88  corp-dc01.corp.local.
+_kerberos._udp                  300 IN  SRV  0 100 88  corp-dc01.corp.local.
+_kerberos._tcp.Default-First-Site-Name._sites  300 IN  SRV  0 100 88  corp-dc01.corp.local.
+_kpasswd._tcp                   300 IN  SRV  0 100 464 corp-dc01.corp.local.
+_kpasswd._udp                   300 IN  SRV  0 100 464 corp-dc01.corp.local.
+
+<span class="cm">; LDAP SRV</span>
+_ldap._tcp                      300 IN  SRV  0 100 389 corp-dc01.corp.local.
+_ldap._udp                      300 IN  SRV  0 100 389 corp-dc01.corp.local.
+_ldap._tcp.Default-First-Site-Name._sites  300 IN  SRV  0 100 389 corp-dc01.corp.local.
+
+<span class="cm">; Global Catalog</span>
+_gc._tcp                        300 IN  SRV  0 100 3268 corp-dc01.corp.local.
+_gc._tcp.Default-First-Site-Name._sites  300 IN  SRV  0 100 3268 corp-dc01.corp.local.
+
+<span class="cm">; Forest/Domain partition locators</span>
+_ldap._tcp.DomainDNSZones       300 IN  SRV  0 100 389 corp-dc01.corp.local.
+_ldap._tcp.ForestDNSZones       300 IN  SRV  0 100 389 corp-dc01.corp.local.
+_ldap._tcp.Default-First-Site-Name._sites.DomainDNSZones  300 IN  SRV  0 100 389 corp-dc01.corp.local.
+_ldap._tcp.Default-First-Site-Name._sites.ForestDNSZones  300 IN  SRV  0 100 389 corp-dc01.corp.local.
+
+<span class="cm">; Kerberos realm TXT (for Linux sssd/realmd clients)</span>
+_kerberos                       3600 IN  TXT <span class="str">"CORP.LOCAL"</span></code></pre>
+  </div>
+
+  <h3>_msdcs Zone File</h3>
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">bind</span><span class="code-label">/etc/bind/zones/db._msdcs.corp.local</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code>$ORIGIN _msdcs.corp.local.
+$TTL 600
+
+@   IN  SOA dns01.corp.local. hostmaster.corp.local. (
+                2024010101
+                900 300 604800 300 )
+
+@               IN  NS  dns01.corp.local.
+
+<span class="cm">; Global Catalog A record</span>
+gc              IN  A   192.168.6.34
+
+<span class="cm">; DC GUID CNAME — add after promotion</span>
+<span class="cm">; Retrieve: (Get-ADDomainController -Identity "CORP-DC01").ObjectGUID</span>
+c1771fb0-983c-41dc-9dcb-20ed83363168  IN  CNAME  corp-dc01.corp.local.
+
+<span class="cm">; DC role SRV records</span>
+_ldap._tcp.dc                   300 IN  SRV  0 100 389  corp-dc01.corp.local.
+_ldap._tcp.Default-First-Site-Name._sites.dc  300 IN  SRV  0 100 389  corp-dc01.corp.local.
+_ldap._tcp.pdc                  300 IN  SRV  0 100 389  corp-dc01.corp.local.
+_ldap._tcp.gc                   300 IN  SRV  0 100 3268 corp-dc01.corp.local.
+_ldap._tcp.Default-First-Site-Name._sites.gc  300 IN  SRV  0 100 3268 corp-dc01.corp.local.
+_kerberos._tcp.dc               300 IN  SRV  0 100 88   corp-dc01.corp.local.
+_kerberos._tcp.Default-First-Site-Name._sites.dc  300 IN  SRV  0 100 88  corp-dc01.corp.local.</code></pre>
+  </div>
+
+  <h3>Set Permissions, Validate &amp; Start</h3>
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code>sudo mkdir -p /etc/bind/zones /var/log/named
+sudo chown -R bind:bind /etc/bind/zones /var/log/named
+sudo chmod 755 /etc/bind/zones
+sudo chmod 644 /etc/bind/zones/*
+
+sudo named-checkconf
+sudo named-checkzone corp.local        /etc/bind/zones/db.corp.local
+sudo named-checkzone _msdcs.corp.local /etc/bind/zones/db._msdcs.corp.local
+
+sudo systemctl enable named
+sudo systemctl restart named
+
+<span class="cm"># Smoke tests</span>
+dig @127.0.0.1 corp.local SOA +short
+dig @127.0.0.1 _msdcs.corp.local SOA +short    <span class="cm"># must have its own SOA</span>
+dig @127.0.0.1 _ldap._tcp.corp.local SRV +short
+dig @127.0.0.1 _ldap._tcp.dc._msdcs.corp.local SRV +short</code></pre>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════
+     PHASE 3 — WINDOWS DC
+════════════════════════════════════════ -->
+<section id="phase3">
+  <div class="phase-header windows">
+    <div class="phase-num">03</div>
+    <div class="phase-info">
+      <div class="phase-tag">PowerShell · Windows Server 2022</div>
+      <div class="phase-title">AD DS Promotion (Without Windows DNS)</div>
+      <div class="phase-desc">Point DNS to BIND, install AD DS role, promote to DC. Server reboots automatically.</div>
+      <div class="phase-badge-row">
+        <span class="pbadge pbadge-blue">Run on: corp-dc01 via RDP</span>
+        <span class="pbadge pbadge-blue">PowerShell Admin</span>
+      </div>
+    </div>
+  </div>
+
+  <h3>Get Windows Password from AWS</h3>
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">bash</span><span class="code-label">local machine</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code><span class="cm"># Wait 4-8 min after first boot, then:</span>
+aws ec2 get-password-data \
+  --instance-id i-XXXXXXXXXX \
+  --priv-launch-key ~/.ssh/ad-lab-keypair.pem \
+  --query <span class="str">'PasswordData'</span> --output text</code></pre>
+  </div>
+
+  <h3>Configure DNS &amp; Install AD DS Role</h3>
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">powershell</span><span class="code-label">corp-dc01 · PowerShell Admin</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code><span class="cm"># Point DNS ONLY to Linux BIND</span>
+$ifIndex = (Get-NetAdapter | Where-Object Status -eq <span class="str">'Up'</span>).InterfaceIndex
+Set-DnsClientServerAddress -InterfaceIndex $ifIndex -ServerAddresses <span class="str">"192.168.15.172"</span>
+
+<span class="cm"># Verify BIND is answering</span>
+Resolve-DnsName corp.local -Type SOA -Server 192.168.15.172
+Resolve-DnsName _ldap._tcp.corp.local -Type SRV -Server 192.168.15.172
+
+<span class="cm"># Configure NTP via AWS Time Sync</span>
+w32tm /config /manualpeerlist:<span class="str">"169.254.169.123,0x9"</span> /syncfromflags:MANUAL /reliable:YES /update
+Restart-Service W32Time; w32tm /resync /force
+
+<span class="cm"># Install AD DS role — explicitly WITHOUT DNS role</span>
+Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools
+
+<span class="cm"># Verify DNS was NOT installed</span>
+(Get-WindowsFeature -Name DNS).Installed   <span class="cm"># Must return False</span></code></pre>
+  </div>
+
+  <h3>Promote to Domain Controller</h3>
+  <div class="callout danger">
+    <div class="callout-title">🔴 Server Will Reboot Automatically</div>
+    The server reboots at the end of promotion. After reboot, log in as <code>CORP\Administrator</code> and run phase3b.
+  </div>
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">powershell</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code>Import-Module ADDSDeployment
+
+$DSRMPassword = Read-Host -Prompt <span class="str">"DSRM Password"</span> -AsSecureString
+
+Install-ADDSForest `
+    -DomainName            <span class="str">"corp.local"</span> `
+    -DomainNetbiosName     <span class="str">"CORP"</span> `
+    -DomainMode            <span class="str">"WinThreshold"</span> `
+    -ForestMode            <span class="str">"WinThreshold"</span> `
+    -DatabasePath          <span class="str">"C:\Windows\NTDS"</span> `
+    -SysvolPath            <span class="str">"C:\Windows\SYSVOL"</span> `
+    -LogPath               <span class="str">"C:\Windows\NTDS"</span> `
+    -InstallDns            <span class="op">$false</span> `
+    -CreateDnsDelegation   <span class="op">$false</span> `
+    -NoRebootOnCompletion  <span class="op">$false</span> `
+    -SafeModeAdministratorPassword $DSRMPassword `
+    -Force:<span class="op">$true</span></code></pre>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════
+     PHASE 3b — POST-REBOOT
+════════════════════════════════════════ -->
+<section id="phase3b">
+  <div class="phase-header windows">
+    <div class="phase-num">3b</div>
+    <div class="phase-info">
+      <div class="phase-tag">PowerShell · After Reboot</div>
+      <div class="phase-title">Post-Promotion Verification</div>
+      <div class="phase-desc">Re-assert DNS, retrieve DC GUID, validate domain health</div>
+      <div class="phase-badge-row">
+        <span class="pbadge pbadge-blue">Login as: CORP\Administrator</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">powershell</span><span class="code-label">corp-dc01 · after reboot</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code><span class="cm"># Re-assert DNS (promotion reboot sometimes resets it)</span>
+$ifIndex = (Get-NetAdapter | Where-Object Status -eq <span class="str">'Up'</span>).InterfaceIndex
+Set-DnsClientServerAddress -InterfaceIndex $ifIndex -ServerAddresses <span class="str">"192.168.15.172"</span>
+Clear-DnsClientCache
+
+<span class="cm"># Force DNS record registration</span>
+ipconfig /registerdns
+Restart-Service Netlogon -Force
+
+<span class="cm"># ── RETRIEVE DC GUID — paste into phase4 on Linux ──</span>
+$dcGuid = (Get-ADDomainController -Identity $env:COMPUTERNAME).ObjectGUID
+Write-Host <span class="str">"DC GUID: $($dcGuid.ToString().ToLower())"</span> -ForegroundColor Yellow
+$dcGuid.ToString().ToLower() | Out-File <span class="str">"C:\dc-guid.txt"</span>
+
+<span class="cm"># Validate domain health</span>
+Get-ADDomain | Select-Object DNSRoot, NetBIOSName, PDCEmulator
+nltest /dsgetdc:corp.local
+
+<span class="cm"># Verify shares</span>
+net share   <span class="cm"># Must show SYSVOL and NETLOGON</span>
+
+<span class="cm"># Full DNS diagnostic</span>
+dcdiag /test:DNS /DnsBasic /DnsDynamicUpdate /v</code></pre>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════
+     PHASE 4 — POST-PROMOTION LINUX
+════════════════════════════════════════ -->
+<section id="phase4">
+  <div class="phase-header linux">
+    <div class="phase-num">04</div>
+    <div class="phase-info">
+      <div class="phase-tag">Linux · Bash</div>
+      <div class="phase-title">Post-Promotion DNS Update</div>
+      <div class="phase-desc">Add DC GUID CNAME, fix dynamic update permissions, full validation</div>
+      <div class="phase-badge-row">
+        <span class="pbadge pbadge-green">Run on: dns01</span>
+        <span class="pbadge pbadge-green">After phase3b</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">bash</span><span class="code-label">dns01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code>MSDCS_ZONE=<span class="str">"/etc/bind/zones/db._msdcs.corp.local"</span>
+DC_GUID=<span class="str">"c1771fb0-983c-41dc-9dcb-20ed83363168"</span>   <span class="cm"># from phase3b</span>
+
+<span class="cm"># Remove old GUID line (idempotent)</span>
+sudo sed -i <span class="str">"/${DC_GUID}/d"</span> <span class="str">"$MSDCS_ZONE"</span>
+
+<span class="cm"># Increment serial</span>
+SERIAL=$(grep -oP <span class="str">'\d{10}'</span> <span class="str">"$MSDCS_ZONE"</span> | head -1)
+sudo sed -i <span class="str">"s/$SERIAL/$((SERIAL+1))/"</span> <span class="str">"$MSDCS_ZONE"</span>
+
+<span class="cm"># Append GUID CNAME</span>
+echo <span class="str">"${DC_GUID}  IN  CNAME  corp-dc01.corp.local."</span> | sudo tee -a <span class="str">"$MSDCS_ZONE"</span>
+
+sudo named-checkzone _msdcs.corp.local <span class="str">"$MSDCS_ZONE"</span>
+sudo rndc reload
+sleep 2
+
+<span class="cm"># Verify</span>
+dig @127.0.0.1 <span class="str">"${DC_GUID}._msdcs.corp.local"</span> CNAME +short
+<span class="cm"># Expected: corp-dc01.corp.local.</span></code></pre>
+  </div>
+
+  <h3>Full DNS Validation</h3>
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code><span class="cm"># corp.local zone</span>
+dig @127.0.0.1 corp.local SOA +short
+dig @127.0.0.1 corp-dc01.corp.local A +short
+dig @127.0.0.1 _ldap._tcp.corp.local SRV +short
+dig @127.0.0.1 _kerberos._tcp.corp.local SRV +short
+dig @127.0.0.1 _gc._tcp.corp.local SRV +short
+
+<span class="cm"># _msdcs zone — must have its own SOA</span>
+dig @127.0.0.1 _msdcs.corp.local SOA +short
+dig @127.0.0.1 _ldap._tcp.dc._msdcs.corp.local SRV +short
+dig @127.0.0.1 _ldap._tcp.pdc._msdcs.corp.local SRV +short
+dig @127.0.0.1 gc._msdcs.corp.local A +short
+
+<span class="cm"># Reverse lookup</span>
+dig @127.0.0.1 -x 192.168.6.34 +short
+
+<span class="cm"># Dynamic update test</span>
+sudo nsupdate -k /etc/bind/tsig-ad.key &lt;&lt; <span class="str">'EOF'</span>
+<span class="str">server 127.0.0.1
+zone corp.local.
+update add test-ddns.corp.local. 300 A 192.168.6.99
+send</span>
+EOF
+dig @127.0.0.1 test-ddns.corp.local A +short   <span class="cm"># expect 192.168.6.99</span></code></pre>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════
+     PHASE 5 — DOMAIN JOIN
+════════════════════════════════════════ -->
+<section id="phase5">
+  <div class="phase-header windows">
+    <div class="phase-num">05</div>
+    <div class="phase-info">
+      <div class="phase-tag">PowerShell · Windows Client</div>
+      <div class="phase-title">Client Domain Join</div>
+      <div class="phase-desc">Set DNS, pre-flight checks, join corp.local, verify Kerberos</div>
+      <div class="phase-badge-row">
+        <span class="pbadge pbadge-blue">Run on: client01</span>
+        <span class="pbadge pbadge-blue">Local Administrator</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">powershell</span><span class="code-label">client01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code><span class="cm"># Step 1: Point DNS to BIND</span>
+$ifIndex = (Get-NetAdapter | Where-Object Status -eq <span class="str">'Up'</span>).InterfaceIndex
+Set-DnsClientServerAddress -InterfaceIndex $ifIndex -ServerAddresses <span class="str">"192.168.15.172"</span>
+Clear-DnsClientCache
+
+<span class="cm"># Step 2: Pre-flight DNS check</span>
+Resolve-DnsName corp.local -Type SOA -Server 192.168.15.172
+Resolve-DnsName _ldap._tcp.corp.local -Type SRV -Server 192.168.15.172
+Resolve-DnsName _ldap._tcp.dc._msdcs.corp.local -Type SRV -Server 192.168.15.172
+Resolve-DnsName _ldap._tcp.pdc._msdcs.corp.local -Type SRV -Server 192.168.15.172
+
+<span class="cm"># Step 3: Port connectivity</span>
+<span class="kw">foreach</span> ($port <span class="kw">in</span> @(88, 389, 445, 464, 3268)) {
+    $t = Test-NetConnection -ComputerName 192.168.6.34 -Port $port -WarningAction SilentlyContinue
+    Write-Host <span class="str">"Port $port : $($t.TcpTestSucceeded)"</span>
+}
+
+<span class="cm"># Step 4: Time sync</span>
+w32tm /config /manualpeerlist:<span class="str">"169.254.169.123,0x9"</span> /syncfromflags:MANUAL /reliable:YES /update
+Restart-Service W32Time; w32tm /resync /force
+
+<span class="cm"># Step 5: JOIN — note: no -OUPath (CN=Computers is a container, not an OU)</span>
+Add-Computer `
+    -DomainName <span class="str">"corp.local"</span> `
+    -Credential (Get-Credential <span class="str">"CORP\Administrator"</span>) `
+    -Force `
+    -Restart</code></pre>
+  </div>
+
+  <h3>Post-Join Validation</h3>
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">powershell</span><span class="code-label">client01 · after reboot · login as CORP\Administrator</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code>(Get-WmiObject Win32_ComputerSystem).Domain          <span class="cm"># corp.local</span>
+whoami                                                <span class="cm"># CORP\Administrator</span>
+klist                                                 <span class="cm"># Kerberos tickets</span>
+Get-ADComputer -Filter * | Select-Object Name, DistinguishedName
+Get-ADUser -Filter * | Select-Object SamAccountName</code></pre>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════
+     FIXES — REAL-WORLD ISSUES
+════════════════════════════════════════ -->
+<section id="fix-apparmor">
+  <h2><span class="section-num">FIX</span>AppArmor Blocks Journal File Creation</h2>
+
+  <div class="fix-block">
+    <div class="fix-header">
+      <span class="fix-icon">🔥</span>
+      <span class="fix-title">Symptom: <code>journal open failed: permission denied</code></span>
+    </div>
+    <div class="fix-body">
+      <p>BIND accepts the dynamic update, processes it, then fails to write the <code>.jnl</code> journal file. The record is discarded. The update appears to be "accepted" in syslog but never persists.</p>
+      <p>Syslog shows the real cause:</p>
+      <div class="code-wrap">
+        <div class="code-header"><span class="code-lang">log</span></div>
+        <pre><code>/etc/bind/zones/db.corp.local.jnl: create: permission denied
+apparmor="DENIED" operation="mknod" profile="named"
+name="/etc/bind/zones/db.corp.local.jnl"
+requested_mask="c" denied_mask="c"</code></pre>
+      </div>
+      <p>AppArmor's <code>named</code> profile does not allow file creation in <code>/etc/bind/zones/</code>. <code>chown</code> and <code>chmod</code> have no effect — AppArmor blocks at the kernel level regardless of filesystem permissions.</p>
+    </div>
+  </div>
+
+  <h4>Fix — AppArmor Local Override</h4>
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">bash</span><span class="code-label">dns01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code><span class="cm"># Add write permission for zones directory to the named AppArmor profile</span>
+sudo tee /etc/apparmor.d/local/usr.sbin.named &gt; /dev/null &lt;&lt; <span class="str">'EOF'</span>
+<span class="str">/etc/bind/zones/ rw,
+/etc/bind/zones/** rw,</span>
+EOF
+
+<span class="cm"># Reload the profile</span>
+sudo apparmor_parser -r /etc/apparmor.d/usr.sbin.named
+
+<span class="cm"># Verify</span>
+sudo aa-status | grep named
+
+<span class="cm"># Test — journal file must now be created</span>
+sudo nsupdate -k /etc/bind/tsig-ad.key &lt;&lt; <span class="str">'EOF'</span>
+<span class="str">server 127.0.0.1
+zone corp.local.
+update add test-ddns.corp.local. 300 A 192.168.6.99
+send</span>
+EOF
+ls -la /etc/bind/zones/db.corp.local.jnl   <span class="cm"># Must now exist</span></code></pre>
+  </div>
+</section>
+
+<section id="fix-tsig">
+  <h2><span class="section-num">FIX</span>Dynamic Update REFUSED</h2>
+
+  <div class="fix-block">
+    <div class="fix-header">
+      <span class="fix-icon">🔥</span>
+      <span class="fix-title">Symptom: <code>update failed: REFUSED</code> or <code>signer denied</code></span>
+    </div>
+    <div class="fix-body">
+      <p>Two different causes — check the syslog to distinguish:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Syslog Message</th><th>Cause</th><th>Fix</th></tr></thead>
+          <tbody>
+            <tr><td><code>signer "ad-update-key" denied</code></td><td>TSIG key not listed in <code>allow-update</code></td><td>Add <code>key "ad-update-key"</code> to <code>allow-update</code></td></tr>
+            <tr><td><code>update denied</code> (no signer)</td><td>IP not in <code>allow-update</code> and no TSIG</td><td>Add IP or use <code>-k</code> flag</td></tr>
+            <tr><td><code>journal open failed</code></td><td>AppArmor blocks <code>.jnl</code> write</td><td>Add AppArmor override (above)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <h4>Fix — Correct allow-update</h4>
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code><span class="cm"># Each zone must list BOTH the TSIG key AND the DC IP AND 127.0.0.1</span>
+sudo sed -i \
+  <span class="str">'s/allow-update  { key "ad-update-key"; };/allow-update { key "ad-update-key"; 192.168.6.34; 127.0.0.1; };/g'</span> \
+  /etc/bind/named.conf.local
+
+sudo named-checkconf &amp;&amp; sudo rndc reload</code></pre>
+  </div>
+
+  <h4>Correct nsupdate Usage</h4>
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code><span class="cm"># CORRECT — with TSIG key (authenticated)</span>
+sudo nsupdate -k /etc/bind/tsig-ad.key &lt;&lt; <span class="str">'EOF'</span>
+<span class="str">server 127.0.0.1
+zone corp.local.
+update add test.corp.local. 300 A 192.168.6.99
+send</span>
+EOF
+
+<span class="cm"># WRONG — no key, gets REFUSED unless 127.0.0.1 is in allow-update</span>
+sudo nsupdate &lt;&lt; <span class="str">'EOF'</span>
+<span class="str">server 127.0.0.1
+...</span>
+EOF</code></pre>
+  </div>
+</section>
+
+<section id="fix-msdcs">
+  <h2><span class="section-num">FIX</span>_msdcs Zone Architecture</h2>
+
+  <div class="fix-block">
+    <div class="fix-header">
+      <span class="fix-icon">🔥</span>
+      <span class="fix-title">Wrong Design: _msdcs as a subdomain delegation inside corp.local</span>
+    </div>
+    <div class="fix-body">
+      <div class="code-wrap">
+        <div class="code-header"><span class="code-lang">bind</span><span class="code-label">❌ Wrong</span></div>
+        <pre><code><span class="cm">; Inside db.corp.local — WRONG</span>
+_msdcs    IN  NS  dns01.corp.local.   <span class="cm">; no separate zone declared</span></code></pre>
+      </div>
+      <div class="code-wrap">
+        <div class="code-header"><span class="code-lang">bind</span><span class="code-label">✅ Correct — named.conf.local</span></div>
+        <pre><code><span class="cm">; Separate authoritative zone declaration</span>
+zone <span class="str">"_msdcs.corp.local"</span> {
+    type master;
+    file <span class="str">"/etc/bind/zones/db._msdcs.corp.local"</span>;
+    allow-update { key <span class="str">"ad-update-key"</span>; 192.168.6.34; 127.0.0.1; };
+};</code></pre>
+      </div>
+      <p>AD's <code>DsGetDcName()</code> queries <code>_msdcs.corp.local</code> as an independent authoritative zone. If BIND has no zone declaration for it, SOA lookups return <code>SERVFAIL</code> and DC Locator fails silently across the entire domain.</p>
+    </div>
+  </div>
+</section>
+
+<section id="fix-join">
+  <h2><span class="section-num">FIX</span>Domain Join: "System Cannot Find the File"</h2>
+
+  <div class="fix-block">
+    <div class="fix-header">
+      <span class="fix-icon">🔥</span>
+      <span class="fix-title">Error: <code>NetpProvisionComputerAccount: LDAP creation failed: 0x2</code></span>
+    </div>
+    <div class="fix-body">
+      <p>NetSetup.log reveals:</p>
+      <div class="code-wrap">
+        <div class="code-header"><span class="code-lang">log</span></div>
+        <pre><code>NetpGetComputerObjectDn: Specified path 'CN=Computers,DC=corp,DC=local' is not an OU
+NetpProvisionComputerAccount: Cannot retry downlevel, specifying OU is not supported</code></pre>
+      </div>
+      <p><code>CN=Computers</code> is a built-in <strong>Container</strong>, not an OU. When passed to <code>-OUPath</code>, Windows refuses it. The fix is to remove <code>-OUPath</code> entirely — Windows places the computer in <code>CN=Computers</code> automatically.</p>
+    </div>
+  </div>
+
+  <h4>Correct Join Command</h4>
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">powershell</span><span class="code-label">✅ Correct — no -OUPath</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code>Add-Computer `
+    -DomainName <span class="str">"corp.local"</span> `
+    -Credential (Get-Credential <span class="str">"CORP\Administrator"</span>) `
+    -Force `
+    -Restart</code></pre>
+  </div>
+</section>
+
+<!-- DNS RECORDS REFERENCE -->
+<section id="records">
+  <h2><span class="section-num">REF</span>Complete AD DNS Record Reference</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Record</th><th>Zone</th><th>Type</th><th>TTL</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><code>@</code></td><td>corp.local</td><td>SOA/NS/A</td><td>3600</td><td>Domain root</td></tr>
+        <tr><td><code>corp-dc01</code></td><td>corp.local</td><td>A</td><td>3600</td><td>DC address</td></tr>
+        <tr><td><code>_kerberos._tcp</code></td><td>corp.local</td><td>SRV :88</td><td>300</td><td>KDC (TCP)</td></tr>
+        <tr><td><code>_kerberos._udp</code></td><td>corp.local</td><td>SRV :88</td><td>300</td><td>KDC (UDP)</td></tr>
+        <tr><td><code>_kpasswd._tcp/udp</code></td><td>corp.local</td><td>SRV :464</td><td>300</td><td>Password change</td></tr>
+        <tr><td><code>_ldap._tcp</code></td><td>corp.local</td><td>SRV :389</td><td>300</td><td>LDAP (TCP)</td></tr>
+        <tr><td><code>_ldap._udp</code></td><td>corp.local</td><td>SRV :389</td><td>300</td><td>LDAP (UDP)</td></tr>
+        <tr><td><code>_gc._tcp</code></td><td>corp.local</td><td>SRV :3268</td><td>300</td><td>Global Catalog</td></tr>
+        <tr><td><code>_ldap._tcp.*.DomainDNSZones</code></td><td>corp.local</td><td>SRV</td><td>300</td><td>Domain partition</td></tr>
+        <tr><td><code>_ldap._tcp.*.ForestDNSZones</code></td><td>corp.local</td><td>SRV</td><td>300</td><td>Forest partition</td></tr>
+        <tr><td><code>_kerberos</code></td><td>corp.local</td><td>TXT</td><td>3600</td><td>Realm (Linux clients)</td></tr>
+        <tr><td><code>@</code></td><td>_msdcs.corp.local</td><td>SOA/NS</td><td>600</td><td>_msdcs authority</td></tr>
+        <tr><td><code>gc</code></td><td>_msdcs.corp.local</td><td>A</td><td>600</td><td>GC IP</td></tr>
+        <tr><td><code>_ldap._tcp.dc</code></td><td>_msdcs.corp.local</td><td>SRV :389</td><td>300</td><td>Any DC</td></tr>
+        <tr><td><code>_ldap._tcp.pdc</code></td><td>_msdcs.corp.local</td><td>SRV :389</td><td>300</td><td>PDC Emulator</td></tr>
+        <tr><td><code>_ldap._tcp.gc</code></td><td>_msdcs.corp.local</td><td>SRV :3268</td><td>300</td><td>GC in _msdcs</td></tr>
+        <tr><td><code>_kerberos._tcp.dc</code></td><td>_msdcs.corp.local</td><td>SRV :88</td><td>300</td><td>KDC in _msdcs</td></tr>
+        <tr><td><code>&lt;DC-GUID&gt;</code></td><td>_msdcs.corp.local</td><td>CNAME</td><td>600</td><td>DC by GUID</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p><em>All <code>_sites</code> variants (e.g., <code>_ldap._tcp.Default-First-Site-Name._sites</code>) must also be present in both zones for site-aware DC locator to function.</em></p>
+</section>
+
+<!-- TROUBLESHOOTING -->
+<section id="troubleshoot">
+  <h2><span class="section-num">REF</span>Troubleshooting Checklist</h2>
+
+  <h3>Quick Diagnostics — Linux DNS Server</h3>
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code><span class="cm"># Config and zone syntax</span>
+sudo named-checkconf
+sudo named-checkzone corp.local        /etc/bind/zones/db.corp.local
+sudo named-checkzone _msdcs.corp.local /etc/bind/zones/db._msdcs.corp.local
+
+<span class="cm"># Is BIND listening on the right IP?</span>
+ss -tulpn | grep <span class="str">":53"</span>
+
+<span class="cm"># AppArmor denials?</span>
+sudo journalctl -u apparmor --no-pager -n 20 | grep named
+
+<span class="cm"># Dynamic update log</span>
+sudo journalctl -u named --no-pager -n 30
+
+<span class="cm"># Test dynamic update</span>
+sudo nsupdate -k /etc/bind/tsig-ad.key &lt;&lt; <span class="str">'EOF'</span>
+<span class="str">server 127.0.0.1
+zone corp.local.
+update add debug.corp.local. 60 A 192.168.6.100
+send</span>
+EOF
+dig @127.0.0.1 debug.corp.local A +short</code></pre>
+  </div>
+
+  <h3>Quick Diagnostics — Windows DC</h3>
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">powershell</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code><span class="cm"># DC Locator — most important single test</span>
+nltest /dsgetdc:corp.local /force
+nltest /dsgetdc:corp.local /pdc /force
+
+<span class="cm"># Authoritative DNS diagnostic</span>
+dcdiag /test:DNS /DnsBasic /DnsDynamicUpdate /v
+
+<span class="cm"># Kerberos</span>
+klist; klist tgt
+
+<span class="cm"># Is SysvolReady = 1?</span>
+(Get-ItemProperty <span class="str">"HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters"</span>).SysvolReady
+
+<span class="cm"># SYSVOL/NETLOGON shares exist?</span>
+net share | Select-String <span class="str">"SYSVOL|NETLOGON"</span>
+
+<span class="cm"># NetSetup.log — exact join error</span>
+Get-Content C:\Windows\debug\NetSetup.LOG | Select-Object -Last 40</code></pre>
+  </div>
+
+  <h3>Common Issues at a Glance</h3>
+  <ul class="checklist">
+    <li><span class="check-icon check-fail">●</span><strong>update failed: REFUSED</strong> — TSIG key or DC IP missing from <code>allow-update</code>, or AppArmor blocking <code>.jnl</code> creation</li>
+    <li><span class="check-icon check-fail">●</span><strong>update failed: SERVFAIL</strong> — AppArmor blocking, check <code>journalctl | grep apparmor</code></li>
+    <li><span class="check-icon check-fail">●</span><strong>DC Locator fails</strong> — <code>_msdcs.corp.local</code> not declared as separate zone, or missing SRV records</li>
+    <li><span class="check-icon check-fail">●</span><strong>Domain join: "file not found" (0x2)</strong> — <code>-OUPath "CN=Computers"</code> passed; remove <code>-OUPath</code> entirely</li>
+    <li><span class="check-icon check-fail">●</span><strong>Kerberos "clock skew too great"</strong> — time drift &gt;5 min; run <code>w32tm /resync /force</code> and <code>chronyc makestep</code></li>
+    <li><span class="check-icon check-warn">●</span><strong>DNS record disappears after DC restart</strong> — Windows DDNS overwrites with unauthenticated update that passes but journal fails</li>
+    <li><span class="check-icon check-warn">●</span><strong>BIND not listening after reboot</strong> — check <code>systemctl status named</code>; might be <code>bind9</code> on Ubuntu</li>
+    <li><span class="check-icon check-ok">●</span><strong>Dynamic updates from DC working</strong> — watch <code>journalctl -u named -f</code> after <code>ipconfig /registerdns</code></li>
+  </ul>
+</section>
+
+<!-- COSTS -->
+<section id="costs">
+  <h2><span class="section-num">REF</span>AWS Cost Estimate</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Resource</th><th>Type</th><th>$/hour</th><th>$/month (24×7)</th></tr></thead>
+      <tbody>
+        <tr><td>DC instance</td><td>t3.medium</td><td>$0.042</td><td>~$30</td></tr>
+        <tr><td>DNS instance</td><td>t3.small</td><td>$0.021</td><td>~$15</td></tr>
+        <tr><td>Client instance</td><td>t3.small</td><td>$0.021</td><td>~$15</td></tr>
+        <tr><td>NAT Gateway</td><td>—</td><td>$0.045 + data</td><td>~$33+</td></tr>
+        <tr><td>Elastic IPs (2×)</td><td>—</td><td>$0.005 ea</td><td>~$3.60</td></tr>
+        <tr><td><strong>Total</strong></td><td></td><td></td><td><strong>~$97/month</strong></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>To minimize costs: stop instances when not in use. NAT Gateway charges by the hour even when idle — delete it and recreate when needed, or replace with a NAT instance (t3.nano ~$4/month).</p>
+</section>
+
+<!-- TEARDOWN -->
+<section id="teardown">
+  <h2><span class="section-num">REF</span>Teardown</h2>
+  <div class="code-wrap">
+    <div class="code-header"><span class="code-lang">bash</span><span class="code-label">local machine — WARNING: destroys everything</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+    <pre><code>source aws-lab-ids.env   <span class="cm"># load resource IDs from phase1 output</span>
+
+<span class="cm"># Terminate all instances first</span>
+aws ec2 terminate-instances --region <span class="str">"$REGION"</span> \
+  --instance-ids <span class="str">"$DNS_INSTANCE_ID"</span> <span class="str">"$DC_INSTANCE_ID"</span> <span class="str">"$CLIENT_INSTANCE_ID"</span>
+aws ec2 wait instance-terminated --region <span class="str">"$REGION"</span> \
+  --instance-ids <span class="str">"$DNS_INSTANCE_ID"</span> <span class="str">"$DC_INSTANCE_ID"</span> <span class="str">"$CLIENT_INSTANCE_ID"</span>
+
+<span class="cm"># Delete NAT GW and release EIP</span>
+aws ec2 delete-nat-gateway --region <span class="str">"$REGION"</span> --nat-gateway-id <span class="str">"$NAT_GW_ID"</span>
+sleep 60
+aws ec2 release-address --region <span class="str">"$REGION"</span> --allocation-id <span class="str">"$EIP_ALLOC_ID"</span>
+
+<span class="cm"># Detach and delete IGW</span>
+aws ec2 detach-internet-gateway --region <span class="str">"$REGION"</span> \
+  --vpc-id <span class="str">"$VPC_ID"</span> --internet-gateway-id <span class="str">"$IGW_ID"</span>
+aws ec2 delete-internet-gateway --region <span class="str">"$REGION"</span> --internet-gateway-id <span class="str">"$IGW_ID"</span>
+
+<span class="cm"># Delete subnets, SGs, VPC</span>
+aws ec2 delete-subnet --region <span class="str">"$REGION"</span> --subnet-id <span class="str">"$PRIVATE_SUBNET_ID"</span>
+aws ec2 delete-subnet --region <span class="str">"$REGION"</span> --subnet-id <span class="str">"$PUBLIC_SUBNET_ID"</span>
+aws ec2 delete-security-group --region <span class="str">"$REGION"</span> --group-id <span class="str">"$DNS_SG_ID"</span>
+aws ec2 delete-security-group --region <span class="str">"$REGION"</span> --group-id <span class="str">"$DC_SG_ID"</span>
+aws ec2 delete-vpc --region <span class="str">"$REGION"</span> --vpc-id <span class="str">"$VPC_ID"</span>
+echo <span class="str">"Teardown complete."</span></code></pre>
+  </div>
+</section>
+
+</main>
+</div>
+
+<script>
+function copyCode(btn) {
+  const pre = btn.closest('.code-wrap').querySelector('pre');
+  const text = pre.innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = 'copied!';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = 'copy';
+      btn.classList.remove('copied');
+    }, 2000);
+  });
+}
+
+// Active nav highlighting
+const sections = document.querySelectorAll('section[id]');
+const navLinks = document.querySelectorAll('.nav-link, .nav-phase');
+
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      navLinks.forEach(l => l.classList.remove('active'));
+      const active = document.querySelector(`a[href="#${entry.target.id}"]`);
+      if (active) active.classList.add('active');
+    }
+  });
+}, { rootMargin: '-20% 0px -70% 0px' });
+
+sections.forEach(s => observer.observe(s));
+</script>
+
+</body>
+</html>
