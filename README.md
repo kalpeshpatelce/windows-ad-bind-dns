@@ -630,9 +630,8 @@ NetpProvisionComputerAccount: Cannot retry downlevel, specifying OU is not suppo
 CN=Computers is a built-in Container, not an OU. When passed to -OUPath, Windows refuses it. The fix is to remove -OUPath entirely — Windows places the computer in CN=Computers automatically.
 
 ### Correct Join Command
-powershell
 ✅ Correct — no -OUPath
-''''POWERSHELL
+````POWERSHELL
 Add-Computer `
     -DomainName "corp.local" `
     -Credential (Get-Credential "CORP\Administrator") `
