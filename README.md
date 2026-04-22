@@ -638,3 +638,28 @@ Add-Computer `
     -Force `
     -Restart
 ````
+
+
+## REFERENCE Complete AD DNS Record Reference
+
+| Record                      | 	Zone              | 	Type      | 	TTL | 	Purpose               |
+|-----------------------------|---------------------|-------------|--------|------------------------|
+| @                           | 	corp.local        | 	SOA/NS/A  | 	3600 |	Domain root           |
+| corp-dc01                   | 	corp.local        | 	A	        |   3600 |	DC address            |
+| _kerberos._tcp              | 	corp.local        | 	SRV :88   | 	300  |	KDC (TCP)             |
+| _kerberos._udp              | 	corp.local        | 	SRV :88   | 	300  |	KDC (UDP)             | 
+| _kpasswd._tcp/udp           | 	corp.local        | 	SRV :464  | 	300  |	Password change       |
+| _ldap._tcp                  | 	corp.local        | 	SRV :389  | 	300  |	LDAP (TCP)            |
+| _ldap._udp                  | 	corp.local        | 	SRV :389  | 	300  |	LDAP (UDP)            |
+| _gc._tcp                    | 	corp.local        | 	SRV :3268 | 	300  |	Global Catalog        |
+| _ldap._tcp.*.DomainDNSZones | 	corp.local        | 	SRV       | 	300  |	Domain partition      |
+| _ldap._tcp.*.ForestDNSZones | 	corp.local        | 	SRV       | 	300	 |  Forest partition      |
+| _kerberos                   | 	corp.local        | 	TXT       | 	3600 |  Realm (Linux clients) |
+| @                           | 	_msdcs.corp.local | 	SOA/NS    | 	600  |	_msdcs authority      |
+| gc                          | 	_msdcs.corp.local | 	A	        |   600  |	GC IP                 |
+| _ldap._tcp.dc               | 	_msdcs.corp.local | 	SRV :389  | 	300	 |  Any DC                |
+| _ldap._tcp.pdc              | 	_msdcs.corp.local | 	SRV :389  | 	300	 |  PDC Emulator          |
+| _ldap._tcp.gc               | 	_msdcs.corp.local | 	SRV :3268 | 	300	 |  GC in _msdcs          |
+| _kerberos._tcp.dc           | 	_msdcs.corp.local | 	SRV :88   | 	300	 |  KDC in _msdcs         |
+| <DC-GUID>                   | 	_msdcs.corp.local | 	CNAME	    |   600	 |  DC by GUID            |
+All _sites variants (e.g., _ldap._tcp.Default-First-Site-Name._sites) must also be present in both zones for site-aware DC locator to function.
