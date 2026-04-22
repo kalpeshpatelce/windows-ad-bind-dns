@@ -663,3 +663,52 @@ Add-Computer `
 | _kerberos._tcp.dc           | 	_msdcs.corp.local | 	SRV :88   | 	300	 |  KDC in _msdcs         |
 | <DC-GUID>                   | 	_msdcs.corp.local | 	CNAME	    |   600	 |  DC by GUID            |
 All _sites variants (e.g., _ldap._tcp.Default-First-Site-Name._sites) must also be present in both zones for site-aware DC locator to function.
+
+## Troubleshooting Checklist
+Quick Diagnostics — Linux DNS Server
+````BASH
+# Config and zone syntax
+sudo named-checkconf
+sudo named-checkzone corp.local        /etc/bind/zones/db.corp.local
+sudo named-checkzone _msdcs.corp.local /etc/bind/zones/db._msdcs.corp.local
+
+# Is BIND listening on the right IP?
+ss -tulpn | grep ":53"
+
+# AppArmor denials?
+sudo journalctl -u apparmor --no-pager -n 20 | grep named
+
+# Dynamic update log
+sudo journalctl -u named --no-pager -n 30
+
+# Test dynamic update
+sudo nsupdate -k /etc/bind/tsig-ad.key << 'EOF'
+server 127.0.0.1
+zone corp.local.
+update add debug.corp.local. 60 A 192.168.6.100
+send
+EOF
+dig @127.0.0.1 debug.corp.local A +short
+````
+
+Quick Diagnostics — Windows DC
+````POWERSHELL
+# DC Locator — most important single test
+nltest /dsgetdc:corp.local /force
+nltest /dsgetdc:corp.local /pdc /force
+
+# Authoritative DNS diagnostic
+dcdiag /test:DNS /DnsBasic /DnsDynamicUpdate /v
+
+# Kerberos
+klist; klist tgt
+
+# Is SysvolReady = 1?
+(Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters").SysvolReady
+
+# SYSVOL/NETLOGON shares exist?
+net share | Select-String "SYSVOL|NETLOGON"
+
+# NetSetup.log — exact join error
+Get-Content C:\Windows\debug\NetSetup.LOG | Select-Object -Last 40
+````
