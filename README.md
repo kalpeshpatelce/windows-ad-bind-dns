@@ -8,7 +8,8 @@ This setup replaces Windows DNS (which would normally be installed alongside AD 
 # Host & IP Map
 
 
-| Role | 	Hostname | 	IP Address | 	OS | 	Instance | 
-| DNS	 | dns01.corp.local | 	192.168.15.172 | 	Ubuntu 22.04 LTS | 	t3.small | 
-| DC	 | corp-dc01.corp.local | 	192.168.6.34 | 	Windows Server 2022 | 	t3.medium | 
-| Client | 	EC2AMAZ-CL45ERI | 	DHCP | 	Windows Server 2022 | 	t3.small | 
+| Role | 	Hostname              | IP Address     | 	OS                  | 	Instance  |
+| -------| ---------------------|----------------| ---------------------|-------------|
+| DNS	   | dns01.corp.local     | 192.168.15.172 | 	Ubuntu 22.04 LTS    | 	t3.small  | 
+| DC	   | corp-dc01.corp.local | 192.168.6.34   | 	Windows Server 2022 | 	t3.medium | 
+| Client | EC2AMAZ-CL45ERI      | DHCP           | 	Windows Server 2022 | 	t3.small  | 
